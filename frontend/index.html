@@ -1,0 +1,389 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Activity Packing Planner</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  </head>
+  <body class="bg-slate-100 text-slate-900">
+    <div id="app" class="min-h-screen max-w-6xl mx-auto p-4">
+      <header class="mb-6">
+        <h1 class="text-3xl font-bold">Activity Packing Planner</h1>
+        <p class="text-slate-600">Manage reusable packing items, build activity lists, and generate scaled trip checklists.</p>
+      </header>
+
+      <nav class="flex gap-2 mb-6">
+        <button @click="activeTab = 'items'" :class="tabClass('items')">Items</button>
+        <button @click="activeTab = 'activities'" :class="tabClass('activities')">Activities</button>
+        <button @click="activeTab = 'trip'" :class="tabClass('trip')">Trip Planner</button>
+      </nav>
+
+      <section class="bg-white rounded-xl shadow p-6">
+        <template v-if="activeTab === 'items'">
+          <div class="grid md:grid-cols-2 gap-6">
+            <div>
+              <h2 class="text-xl font-semibold mb-3">Item Library</h2>
+              <div class="space-y-4">
+                <div v-for="item in items" :key="item.id" class="border rounded p-3 bg-slate-50">
+                  <div class="flex justify-between items-start gap-4">
+                    <div>
+                      <h3 class="font-semibold">{{ item.name }}</h3>
+                      <p class="text-sm text-slate-600">Category: {{ item.category || 'General' }}</p>
+                    </div>
+                    <div class="space-x-2 text-right">
+                      <button @click="editItem(item)" class="px-2 py-1 rounded bg-blue-600 text-white text-sm">Edit</button>
+                      <button @click="deleteItem(item.id)" class="px-2 py-1 rounded bg-rose-600 text-white text-sm">Delete</button>
+                    </div>
+                  </div>
+                  <p class="text-sm">Qty: {{ item.default_quantity }} {{ item.quantity_unit }}</p>
+                  <p class="text-sm text-slate-500">Tags: {{ item.tags || 'none' }}</p>
+                  <p v-if="item.notes" class="text-sm text-slate-500">Notes: {{ item.notes }}</p>
+                </div>
+              </div>
+            </div>
+            <div>
+              <h2 class="text-xl font-semibold mb-3">Create/Edit Item</h2>
+              <form @submit.prevent="saveItem" class="space-y-3">
+                <div>
+                  <label class="block text-sm font-medium">Name</label>
+                  <input v-model="itemForm.name" class="w-full border rounded px-3 py-2" required />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium">Category</label>
+                  <input v-model="itemForm.category" class="w-full border rounded px-3 py-2" />
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-sm font-medium">Default Qty</label>
+                    <input v-model.number="itemForm.default_quantity" type="number" min="0" step="0.5" class="w-full border rounded px-3 py-2" required />
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium">Quantity Unit</label>
+                    <select v-model="itemForm.quantity_unit" class="w-full border rounded px-3 py-2">
+                      <option value="each">Each</option>
+                      <option value="per_day">Per Day</option>
+                      <option value="per_trip">Per Trip</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium">Tags</label>
+                  <input v-model="itemForm.tags" class="w-full border rounded px-3 py-2" placeholder="comma-separated" />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium">Notes</label>
+                  <textarea v-model="itemForm.notes" class="w-full border rounded px-3 py-2" rows="3"></textarea>
+                </div>
+                <div class="flex gap-2">
+                  <button type="submit" class="bg-emerald-600 text-white px-4 py-2 rounded">Save Item</button>
+                  <button type="button" @click="resetItemForm" class="bg-slate-200 px-4 py-2 rounded">Clear</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </template>
+
+        <template v-if="activeTab === 'activities'">
+          <div class="grid lg:grid-cols-2 gap-6">
+            <div>
+              <h2 class="text-xl font-semibold mb-3">Saved Activities</h2>
+              <div class="space-y-4">
+                <div v-for="activity in activities" :key="activity.id" class="border rounded p-3 bg-slate-50">
+                  <div class="flex justify-between items-start gap-4">
+                    <div>
+                      <h3 class="font-semibold">{{ activity.name }}</h3>
+                      <p class="text-sm text-slate-600">{{ formattedActivityItems(activity) }}</p>
+                    </div>
+                    <div class="space-x-2 text-right">
+                      <button @click="editActivity(activity)" class="px-2 py-1 rounded bg-blue-600 text-white text-sm">Edit</button>
+                      <button @click="deleteActivity(activity.id)" class="px-2 py-1 rounded bg-rose-600 text-white text-sm">Delete</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <h2 class="text-xl font-semibold mb-3">Create/Edit Activity</h2>
+              <form @submit.prevent="saveActivity" class="space-y-3">
+                <div>
+                  <label class="block text-sm font-medium">Activity Name</label>
+                  <input v-model="activityForm.name" class="w-full border rounded px-3 py-2" required />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium">Activity Items</label>
+                  <div v-for="(entry, index) in activityForm.items" :key="index" class="grid grid-cols-12 gap-2 items-end mb-2">
+                    <div class="col-span-5">
+                      <select v-model.number="entry.item_id" class="w-full border rounded px-3 py-2" required>
+                        <option value="" disabled>Select item</option>
+                        <option v-for="item in items" :key="item.id" :value="item.id">{{ item.name }}</option>
+                      </select>
+                    </div>
+                    <div class="col-span-4">
+                      <input v-model.number="entry.multiplier" type="number" min="0.1" step="0.1" class="w-full border rounded px-3 py-2" placeholder="Multiplier" required />
+                    </div>
+                    <div class="col-span-3 flex gap-2">
+                      <button type="button" @click="removeActivityItem(index)" class="px-3 py-2 rounded bg-rose-600 text-white">Remove</button>
+                    </div>
+                  </div>
+                  <button type="button" @click="addActivityItem" class="bg-slate-200 px-3 py-2 rounded">Add Item</button>
+                </div>
+                <div class="flex gap-2">
+                  <button type="submit" class="bg-emerald-600 text-white px-4 py-2 rounded">Save Activity</button>
+                  <button type="button" @click="resetActivityForm" class="bg-slate-200 px-4 py-2 rounded">Clear</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </template>
+
+        <template v-if="activeTab === 'trip'">
+          <div class="grid lg:grid-cols-2 gap-6">
+            <div>
+              <h2 class="text-xl font-semibold mb-3">Trip Builder</h2>
+              <form @submit.prevent="buildTrip" class="space-y-4 bg-slate-50 rounded p-4">
+                <div>
+                  <label class="block text-sm font-medium">Trip Name</label>
+                  <input v-model="tripName" class="w-full border rounded px-3 py-2" required />
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-sm font-medium">Duration (days)</label>
+                    <input v-model.number="trip.duration_days" type="number" min="1" class="w-full border rounded px-3 py-2" required />
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium">Travellers</label>
+                    <input v-model.number="trip.travellers" type="number" min="1" class="w-full border rounded px-3 py-2" required />
+                  </div>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium">Select Activities</label>
+                  <div class="grid gap-2 mt-2">
+                    <label v-for="activity in activities" :key="activity.id" class="inline-flex items-center gap-2 bg-white border rounded px-3 py-2">
+                      <input type="checkbox" :value="activity.id" v-model="trip.selected_activities" class="form-checkbox" />
+                      {{ activity.name }}
+                    </label>
+                  </div>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium">Reminders</label>
+                  <textarea v-model="trip.remindersText" class="w-full border rounded px-3 py-2" rows="4" placeholder="One reminder per line"></textarea>
+                </div>
+                <button type="button" @click="buildTrip(false)" class="bg-blue-600 text-white px-4 py-2 rounded">Compute Checklist</button>
+                <button type="button" @click="buildTrip(true)" class="bg-emerald-600 text-white px-4 py-2 rounded">Save Trip</button>
+              </form>
+            </div>
+            <div>
+              <h2 class="text-xl font-semibold mb-3">Trip Checklist</h2>
+              <div class="bg-slate-50 rounded p-4 min-h-[280px]">
+                <template v-if="tripResult.items?.length">
+                  <p class="text-sm text-slate-500 mb-3">{{ tripResult.name }} • {{ tripResult.duration_days }} day(s) • {{ tripResult.travellers }} traveller(s)</p>
+                  <ul class="space-y-2">
+                    <li v-for="item in tripResult.items" :key="item.item_id" class="flex justify-between items-center border rounded p-3 bg-white">
+                      <span>{{ item.name }}</span>
+                      <span class="font-semibold">{{ item.computed_quantity }}</span>
+                    </li>
+                  </ul>
+                  <template v-if="tripResult.reminders?.length">
+                    <div class="mt-4 p-3 border rounded bg-white">
+                      <h3 class="font-semibold mb-2">Reminders</h3>
+                      <ul class="list-disc pl-5 space-y-1 text-sm text-slate-700">
+                        <li v-for="(reminder, index) in tripResult.reminders" :key="index">{{ reminder.text }}</li>
+                      </ul>
+                    </div>
+                  </template>
+                </template>
+                <p v-else class="text-slate-500">No trip checklist computed yet. Build a trip to see consolidated item quantities.</p>
+              </div>
+            </div>
+          </div>
+          <div class="mt-8">
+            <h2 class="text-xl font-semibold mb-3">Saved Trips</h2>
+            <div v-if="savedTrips.length" class="space-y-4">
+              <div v-for="trip in savedTrips" :key="trip.id" class="border rounded p-4 bg-slate-50">
+                <div class="flex flex-col gap-2 md:flex-row md:justify-between md:items-center">
+                  <div>
+                    <h3 class="font-semibold">{{ trip.name }}</h3>
+                    <p class="text-sm text-slate-500">{{ trip.duration_days }} day(s), {{ trip.travellers }} traveller(s)</p>
+                  </div>
+                  <div class="flex gap-2">
+                    <button @click="exportTrip(trip.id)" class="px-3 py-2 rounded bg-blue-600 text-white text-sm">Export JSON</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p v-else class="text-slate-500">No saved trips yet. Save a computed trip to persist it.</p>
+          </div>
+        </template>
+      </section>
+    </div>
+
+    <script>
+      const { createApp } = Vue
+      createApp({
+        data() {
+          return {
+            activeTab: 'items',
+            items: [],
+            activities: [],
+            itemForm: {
+              id: null,
+              name: '',
+              category: '',
+              default_quantity: 1,
+              quantity_unit: 'each',
+              tags: '',
+              notes: ''
+            },
+            activityForm: {
+              id: null,
+              name: '',
+              items: []
+            },
+            tripName: 'My Trip',
+            trip: {
+              duration_days: 3,
+              travellers: 1,
+              selected_activities: []
+            },
+            remindersText: '',
+            tripResult: {},
+            savedTrips: []
+          }
+        },
+        created() {
+          this.loadItems()
+          this.loadActivities()
+          this.loadTrips()
+        },
+        methods: {
+          tabClass(tab) {
+            return ['px-4 py-2 rounded', this.activeTab === tab ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700']
+          },
+          async loadItems() {
+            const res = await fetch('/items')
+            this.items = await res.json()
+          },
+          async saveItem() {
+            const payload = { ...this.itemForm }
+            if (payload.id) {
+              await fetch(`/items/${payload.id}`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) })
+            } else {
+              await fetch('/items', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) })
+            }
+            this.resetItemForm()
+            await this.loadItems()
+            await this.loadActivities()
+          },
+          editItem(item) {
+            this.itemForm = { ...item }
+          },
+          async deleteItem(itemId) {
+            if (!confirm('Delete this item?')) return
+            await fetch(`/items/${itemId}`, { method: 'DELETE' })
+            await this.loadItems()
+          },
+          resetItemForm() {
+            this.itemForm = { id: null, name: '', category: '', default_quantity: 1, quantity_unit: 'each', tags: '', notes: '' }
+          },
+          async loadActivities() {
+            const res = await fetch('/activities')
+            this.activities = await res.json()
+          },
+          formattedActivityItems(activity) {
+            const items = JSON.parse(activity.items_json || '[]')
+            return items.map(i => {
+              const item = this.items.find(x => x.id === i.item_id)
+              return item ? `${item.name} x${i.multiplier}` : `unknown item ${i.item_id}`
+            }).join(', ')
+          },
+          addActivityItem() {
+            this.activityForm.items.push({ item_id: '', multiplier: 1 })
+          },
+          removeActivityItem(index) {
+            this.activityForm.items.splice(index, 1)
+          },
+          async saveActivity() {
+            const payload = { ...this.activityForm, items_json: JSON.stringify(this.activityForm.items) }
+            if (payload.id) {
+              await fetch(`/activities/${payload.id}`, { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) })
+            } else {
+              await fetch('/activities', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) })
+            }
+            this.resetActivityForm()
+            await this.loadActivities()
+          },
+          async loadTrips() {
+            const res = await fetch('/trips')
+            this.savedTrips = await res.json()
+          },
+          buildReminders() {
+            return (this.trip.remindersText || '').split('\n').filter(Boolean).map(text => ({ text }))
+          },
+          async buildTrip(save = false) {
+            if (!this.trip.selected_activities.length) {
+              alert('Select at least one activity.')
+              return
+            }
+            const payload = {
+              name: this.tripName,
+              activity_ids: this.trip.selected_activities,
+              duration_days: this.trip.duration_days,
+              travellers: this.trip.travellers,
+              reminders: this.buildReminders(),
+              save: save
+            }
+            const res = await fetch('/trips', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) })
+            this.tripResult = await res.json()
+            if (save) {
+              await this.loadTrips()
+            }
+          },
+          async exportTrip(tripId) {
+            const res = await fetch(`/export/trip/${tripId}`)
+            const data = await res.json()
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `trip-${tripId}.json`
+            document.body.appendChild(a)
+            a.click()
+            a.remove()
+            URL.revokeObjectURL(url)
+          },
+          editActivity(activity) {
+            this.activityForm = {
+              id: activity.id,
+              name: activity.name,
+              items: JSON.parse(activity.items_json || '[]')
+            }
+          },
+          async deleteActivity(activityId) {
+            if (!confirm('Delete this activity?')) return
+            await fetch(`/activities/${activityId}`, { method: 'DELETE' })
+            await this.loadActivities()
+          },
+          resetActivityForm() {
+            this.activityForm = { id: null, name: '', items: [] }
+          },
+          async buildTrip() {
+            if (!this.trip.selected_activities.length) {
+              alert('Select at least one activity.')
+              return
+            }
+            const payload = {
+              name: this.tripName,
+              activity_ids: this.trip.selected_activities,
+              duration_days: this.trip.duration_days,
+              travellers: this.trip.travellers
+            }
+            const res = await fetch('/trips', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) })
+            this.tripResult = await res.json()
+          }
+        }
+      }).mount('#app')
+    </script>
+  </body>
+</html>

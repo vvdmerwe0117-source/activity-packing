@@ -1,0 +1,4 @@
+__pycache__
+*.pyc
+.venv
+activity_packing.db
